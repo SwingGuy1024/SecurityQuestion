@@ -16,6 +16,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -29,7 +30,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RequestFilter extends OncePerRequestFilter {
   private static final Logger log = LoggerFactory.getLogger(RequestFilter.class);
 
-  private Supplier<SecurityContext> contextSupplier = SecurityContextHolder::getContext;
+  private final Supplier<SecurityContext> contextSupplier = SecurityContextHolder::getContext;
 
   public RequestFilter() {
     super();
@@ -50,25 +51,47 @@ public class RequestFilter extends OncePerRequestFilter {
     log.trace("Filter chained");
   }
 
+  // In the real application, the JWT token gets parsed and processed here, so this is where the application determines if a JwtToken is
+  // authentic and isn't expired. It doesn't look at the role, which is handled by Spring Security outside of the application code.
   private void processFilter(final HttpServletRequest request) {
     String uri = request.getRequestURI();
-    String role = "CUSTOMER";
+    String role = "ADMIN";
     log.debug("URI is {}", uri);
-    if (uri.contains("One")) {
-      throw new CredentialsExpiredException("Method One");
+    if (uri.contains("failureModeFour")) {
+      log.debug("Setting a usernamePasswordAuthenticationToken with empty Authorization list");
+      UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken
+          = new UsernamePasswordAuthenticationToken("Dummy", "expired credentials", Collections.emptyList());
+      final WebAuthenticationDetails details = new WebAuthenticationDetailsSource().buildDetails(request);
+      usernamePasswordAuthenticationToken.setDetails(details);
+      contextSupplier.get().setAuthentication(usernamePasswordAuthenticationToken);
+      return;
     }
-    if (uri.contains("Two")) {
-      throw new ExpectationFailed417Exception("Method Two");
+    if (uri.contains("failureModeOne")) {
+      log.debug("Throwing CredentialsExpiredException");
+      throw new CredentialsExpiredException("failureModeOne"); // Extends AuthenticationException
     }
-    if (uri.contains("Five")) {
+    if (uri.contains("failureModeThree")) {
+      log.debug("Throwing ExpectationFailed417Exception");
+      throw new ExpectationFailed417Exception("failureModeThree");
+    }
+    if (uri.contains("methodThree")) {
       role = "UNKNOWN";
     }
+    if (uri.contains("view")) {
+      log.debug("Skipping Authentication.");
+      // view requires no authentication. In a normal application, we bail because it doesn't have a bearer token. Here we just
+      // bail because we know it needs no authentication.
+      return;
+    }
 
+    log.debug("Processing request with role {}.", role);
     // Once we get the token validate it.
     final Collection<? extends GrantedAuthority> authorities = Collections.singleton(new User.Authority(role));
     UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken
-        = new UsernamePasswordAuthenticationToken("Dummy", null, authorities);
-    usernamePasswordAuthenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        = new UsernamePasswordAuthenticationToken("Dummy", "expired credentials", authorities);
+    final WebAuthenticationDetails details = new WebAuthenticationDetailsSource().buildDetails(request);
+    
+    usernamePasswordAuthenticationToken.setDetails(details);
     // After setting the Authentication in the context, we specify that the current user is authenticated.
     // So it passes the Spring Security Configurations successfully.
     final SecurityContext context = contextSupplier.get();

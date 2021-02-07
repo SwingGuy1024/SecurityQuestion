@@ -67,7 +67,7 @@ public class User implements UserDetails {
 
   @Override
   public Collection<? extends GrantedAuthority> getAuthorities() {
-    return Collections.singleton(new Authority("CUSTOMER"));
+    return Collections.singleton(new Authority("ADMIN"));
   }
 
   public static final class Authority implements GrantedAuthority {

@@ -1,5 +1,9 @@
 package org.question.security;
 
+import java.io.IOException;
+import java.io.Serializable;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,9 +17,11 @@ import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
@@ -33,8 +39,6 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
   private final CustomUserDetailsService customUserDetailsService;
 
-  private final CustomAuthenticationEntryPoint authenticationEntryPoint;
-
   private final RequestFilter requestFilter;
 
   private final PasswordEncoder encoder = new BCryptPasswordEncoder();
@@ -51,13 +55,10 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
   @Autowired
   public WebSecurityConfig(
-      final CustomUserDetailsService customUserDetailsService,
-      final CustomAuthenticationEntryPoint customAuthenticationEntryPoint
-//      final JwtRequestFilter jwtRequestFilter
+      final CustomUserDetailsService customUserDetailsService
   ) {
     super();
     this.customUserDetailsService = customUserDetailsService;
-    this.authenticationEntryPoint = customAuthenticationEntryPoint;
     requestFilter = new RequestFilter();
   }
 
@@ -77,22 +78,18 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
     ;
   }
 
-
   @Bean
   @Override
   public AuthenticationManager authenticationManagerBean() throws Exception {
     return super.authenticationManagerBean();
   }
 
+  @SuppressWarnings("HardcodedFileSeparator")
   @Override
   protected void configure(final HttpSecurity http) throws Exception {
     log.trace("Configuring WebSecurityConfig");
 
-    // The idea here is that the menu is accessible under /menuItem, which does not require authentication, so 
-    // potential customers may always look at a menu. Customer operations like placing an order require a 
-    // authentication with the CUSTOMER role. Administrative work, such as changing the menu, requires
-    // authentication with the ADMIN role.
-    //noinspection HardcodedFileSeparator
+    /* The /view/** path requires no authentication. The others start with /admin, and require the ADMIN role. */
     http
         .csrf()
           .disable()
@@ -100,30 +97,21 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
           .disable()
         .formLogin()
           .disable()
-        .exceptionHandling()
-          .authenticationEntryPoint(authenticationEntryPoint)
-        .and()
+
+//        .exceptionHandling()     // three lines to turn on the AuthenticationEntryPoint
+//          .authenticationEntryPoint(authenticationEntryPoint)
+//        .and()
+
         .authorizeRequests()
           .antMatchers("/admin/**")
-            .hasRole("CUSTOMER")
-          .antMatchers(
-            "/login",
-            "/view",
-            "/**",
-            "/home",
-            "/swagger-ui.html",
-            "/api-docs",
-            "/configuration/**",
-            "/swagger*/**",
-            "/webjars/**",
-            "/swagger-resources/**"
-        )
-          .permitAll()
+            .hasRole("ADMIN")
+          .antMatchers("/view/**")
+            .permitAll()
         .anyRequest()
           .authenticated()
         .and()
           .sessionManagement()
-          .sessionCreationPolicy(SessionCreationPolicy.STATELESS)//          .httpBasic()
+          .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
         .and()
           .addFilterBefore(requestFilter, UsernamePasswordAuthenticationFilter.class)
     ;
@@ -133,5 +121,28 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
   @Override
   protected UserDetailsService userDetailsService() {
     return customUserDetailsService;
+  }
+  
+  private final CustomAuthenticationEntryPoint authenticationEntryPoint = new CustomAuthenticationEntryPoint();
+  
+  static class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint, Serializable {
+
+    private static final long serialVersionUID = -7858869558953243875L;
+
+    CustomAuthenticationEntryPoint() {
+      log.debug("Instantiating JwtAuthenticationEntryPoint");
+    }
+
+    @Override
+    public void commence(HttpServletRequest request, HttpServletResponse response,
+                         final AuthenticationException authException) {
+      log.debug("Auth exception of {}", authException.getClass());
+      log.debug("(Be sure to turn off the authenticationEntryPoint to test the other endpoints.)");
+
+      // I can't really set my chosen status code in a real application, because I have no idea if the
+      // authentication failure is caused by an expired token or not.
+//      response.sendError(418 /*I am a teapot.*/, 
+
+    }
   }
 }
