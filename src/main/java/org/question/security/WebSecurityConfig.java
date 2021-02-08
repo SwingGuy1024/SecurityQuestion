@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
@@ -84,38 +85,35 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
     return super.authenticationManagerBean();
   }
 
-  @SuppressWarnings("HardcodedFileSeparator")
-  @Override
-  protected void configure(final HttpSecurity http) throws Exception {
-    log.trace("Configuring WebSecurityConfig");
-
-    /* The /view/** path requires no authentication. The others start with /admin, and require the ADMIN role. */
-    http
-        .csrf()
-          .disable()
-        .cors()
-          .disable()
-        .formLogin()
-          .disable()
-
-//        .exceptionHandling()     // three lines to turn on the AuthenticationEntryPoint
-//          .authenticationEntryPoint(authenticationEntryPoint)
-//        .and()
-
-        .authorizeRequests()
-          .antMatchers("/admin/**")
-            .hasRole("ADMIN")
-          .antMatchers("/view/**")
-            .permitAll()
-        .anyRequest()
-          .authenticated()
-        .and()
-          .sessionManagement()
-          .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-        .and()
-          .addFilterBefore(requestFilter, UsernamePasswordAuthenticationFilter.class)
-    ;
-  }
+    @SuppressWarnings("HardcodedFileSeparator")
+    @Override
+    protected void configure(final HttpSecurity http) throws Exception {
+      log.trace("Configuring WebSecurityConfig");
+  
+      /* The /view/** path requires no authentication. The others start with /admin, and require the ADMIN role. */
+      http
+          .csrf()
+            .disable()
+          .cors()
+            .disable()
+          .formLogin()
+            .disable()
+          .authorizeRequests()
+            .antMatchers("/admin/**")
+              .hasRole("ADMIN")
+            .antMatchers("/view/**")
+              .permitAll()
+          .anyRequest()
+            .authenticated()
+          .and()
+            .sessionManagement()
+            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+          .and()
+            .addFilterBefore(requestFilter, UsernamePasswordAuthenticationFilter.class)
+          .exceptionHandling()
+            .authenticationEntryPoint(authenticationEntryPoint)
+      ;
+    }
 
   @Bean
   @Override
@@ -135,14 +133,13 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
-                         final AuthenticationException authException) {
+                         final AuthenticationException authException) throws IOException {
       log.debug("Auth exception of {}", authException.getClass());
-      log.debug("(Be sure to turn off the authenticationEntryPoint to test the other endpoints.)");
-
-      // I can't really set my chosen status code in a real application, because I have no idea if the
-      // authentication failure is caused by an expired token or not.
-//      response.sendError(418 /*I am a teapot.*/, 
-
+      
+      if (authException instanceof CredentialsExpiredException) {
+        response.sendError(HttpServletResponse.SC_EXPECTATION_FAILED, "Expired Token"); // This never gets executed
+      }
+      response.sendError(HttpServletResponse.SC_FORBIDDEN, "Forbidden for unknown reason"); // The message goes nowhere.
     }
   }
 }

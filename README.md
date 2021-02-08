@@ -14,9 +14,7 @@ I tried installing an AuthenticationEntryPoint, by calling this in the `WebSecur
       .exceptionHandling()
       .authenticationEntryPoint(authenticationEntryPoint)
 
-This doesn't work because the authenticationEntryPoint's `commence()` gets sent an exception, but it's not the one I threw. I throw a subclass of AuthenticationException with my message, but that gets thrown away, and a different AuthenticationException gets thrown, which is what the `commence()` method sees. 
-
-(This mode is disabled in this test case, because it can interfere with the other cases, and because I dont' enable authenticationEntryPoint in my actual server. There are instructions below about how to enable it.)
+My request filter throws a CredentialsExpiredException, which I expected to see in the `AuthenticationEntryPoint.commence()` method, but I see a different exception. In fact, I see the same kind of exception, with no message, for all authentication failures. So I can't distinguish between my expired token and any other failure reason.
 
 ### Failure Mode Two: Using `@ResponseStatus` annotation
 
@@ -40,14 +38,11 @@ None of these six endpoints require any additional input or authentication token
 Here are the six end points:
 
 ### Failure Mode One: `/admin/failureModeOne/`
-This one is disabled in the code, but you can enable it by uncommenting three consecutive lines in `WebSecurityConfig.configure()` When it's enabled, it will return a 500-Internal Server Error, and a log statement will show the class of the exception that the AuthenticationEntryPoint received is InsufficientAuthenticationException instead of the CredentialsExpiredException that was thrown by the `RequestFilter` class.
-
-If you leave this on, the other failure modes will also return 500, so be sure to remove the three lines before testing the rest.
-
+This will return a 403-Forbidden, and a log statement will show the class of the exception that the AuthenticationEntryPoint received is InsufficientAuthenticationException instead of the CredentialsExpiredException that was thrown by the `RequestFilter` class.
 
 ### Failure Modes Two and Three: `/admin/failureModeThree/`
 
-This one gets caught in the `RequestFilter` class, which detects it and throws an `ExpectationFailed417Exception`, which is annotated with `@ResponseStatus(HttpStatus.EXPECTATION_FAILED)`. I want it to return a response with error code 417, but I get 403-Forbidden instead, with no response body. This endpoint illustrates both failure modes two and three. Removing or disabling the `TimoutControllerAdvice` class doesn't change anything.
+The `RequestFilter` class responds to this one by throwing an `ExpectationFailed417Exception`, which is annotated with `@ResponseStatus(HttpStatus.EXPECTATION_FAILED)`. I want it to return a response with error code 417, but I get 403-Forbidden instead, with no response body. This endpoint illustrates both failure modes two and three. Removing or disabling the `TimoutControllerAdvice` class doesn't change anything.
 
 ### Failure Mode Four: `/admin/failureModeFour/`
 
@@ -72,7 +67,7 @@ This one partly proves that security is working. It requires authentication with
 
 ### Method Three: `/admin/methodThree/`
 
-This one proves that security is working. It requires authentication with a role of ADMIN, but the role gets set to UNKNOWN, so it fails. This is the one failure mode that works correctly, returning a 403, with the response body below. But if an `authenticationEntryPoint` is installed, it never sees it, because the application doesn't throw an exception.
+This one proves that security is working. It requires authentication with a role of ADMIN, but the role gets set to UNKNOWN, so it fails. This is the one failure mode that works correctly, returning a 403, with the response body below. But the `authenticationEntryPoint` doesn't get called in this case, because the application doesn't throw an exception.
 
     {
       "timestamp": "2021-02-07T08:52:47.270+00:00",
